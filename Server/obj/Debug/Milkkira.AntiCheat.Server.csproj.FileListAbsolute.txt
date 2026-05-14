@@ -23,4 +23,3 @@ F:\TarKov\TarkovBeta\AntiCheat\Server\obj\Debug\Milkkira.AntiCheat.Server.dll
 F:\TarKov\TarkovBeta\AntiCheat\Server\obj\Debug\refint\Milkkira.AntiCheat.Server.dll
 F:\TarKov\TarkovBeta\AntiCheat\Server\obj\Debug\Milkkira.AntiCheat.Server.pdb
 F:\TarKov\TarkovBeta\AntiCheat\Server\obj\Debug\ref\Milkkira.AntiCheat.Server.dll
-F:\TarKov\TarkovBeta\AntiCheat\Server\obj\Debug\Milkkira.D05DCFF9.Up2Date

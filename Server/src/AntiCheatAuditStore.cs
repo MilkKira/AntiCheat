@@ -24,80 +24,70 @@ internal static class AntiCheatAuditStore
     public static void Configure(ISptLogger<AntiCheatBootstrap> logger)
     {
         _logger = logger;
+        ConfigureNativeSqliteResolver();
+        Batteries_V2.Init();
 
-        try
+        // 数据库放在当前服务端模组 DLL 所在目录，方便随模组一起备份/迁移。
+        var assemblyDirectory = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+        var databaseDirectory = string.IsNullOrWhiteSpace(assemblyDirectory)
+            ? AppContext.BaseDirectory
+            : assemblyDirectory;
+
+        Directory.CreateDirectory(databaseDirectory);
+
+        var databasePath = Path.Combine(databaseDirectory, DatabaseFileName);
+        _connectionString = new SqliteConnectionStringBuilder
         {
-            ConfigureNativeSqliteResolver();
-            Batteries_V2.Init();
+            DataSource = databasePath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Cache = SqliteCacheMode.Shared
+        }.ToString();
 
-            // 数据库放在当前服务端模组 DLL 所在目录，方便随模组一起备份/迁移。
-            var assemblyDirectory = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-            var databaseDirectory = string.IsNullOrWhiteSpace(assemblyDirectory)
-                ? AppContext.BaseDirectory
-                : assemblyDirectory;
-
-            Directory.CreateDirectory(databaseDirectory);
-
-            var databasePath = Path.Combine(databaseDirectory, DatabaseFileName);
-            _connectionString = new SqliteConnectionStringBuilder
-            {
-                DataSource = databasePath,
-                Mode = SqliteOpenMode.ReadWriteCreate,
-                Cache = SqliteCacheMode.Shared
-            }.ToString();
-
-            lock (SyncRoot)
-            {
-                if (_initialized) return;
-
-                using var connection = OpenConnection();
-
-                ExecuteNonQuery(connection, "PRAGMA journal_mode=WAL;");
-                ExecuteNonQuery(connection, "PRAGMA busy_timeout=5000;");
-                ExecuteNonQuery(
-                    connection,
-                    """
-                    CREATE TABLE IF NOT EXISTS access_events (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        created_at_utc TEXT NOT NULL,
-                        event_type TEXT NOT NULL,
-                        decision TEXT NOT NULL,
-                        session_id TEXT NOT NULL,
-                        profile_id TEXT NULL,
-                        ip_address TEXT NULL,
-                        forwarded_for TEXT NULL,
-                        method TEXT NULL,
-                        path TEXT NULL,
-                        query_string TEXT NULL,
-                        host TEXT NULL,
-                        user_agent TEXT NULL,
-                        trace_id TEXT NULL,
-                        reason TEXT NULL
-                    );
-                    """);
-
-                ExecuteNonQuery(connection, "CREATE INDEX IF NOT EXISTS ix_access_events_created_at_utc ON access_events(created_at_utc);");
-                ExecuteNonQuery(connection, "CREATE INDEX IF NOT EXISTS ix_access_events_session_id ON access_events(session_id);");
-                ExecuteNonQuery(connection, "CREATE INDEX IF NOT EXISTS ix_access_events_profile_id ON access_events(profile_id);");
-                ExecuteNonQuery(connection, "CREATE INDEX IF NOT EXISTS ix_access_events_ip_address ON access_events(ip_address);");
-
-                _initialized = true;
-            }
-
-            _logger?.Info($"[AntiCheat] SQLite access audit enabled: {databasePath}");
-        }
-        catch (Exception exception)
+        lock (SyncRoot)
         {
-            _initialized = false;
-            _connectionString = null;
-            _logger?.Warning($"[AntiCheat] SQLite access audit disabled: {exception.Message}");
+            if (_initialized) return;
+
+            using var connection = OpenConnection();
+
+            ExecuteNonQuery(connection, "PRAGMA journal_mode=WAL;");
+            ExecuteNonQuery(connection, "PRAGMA busy_timeout=5000;");
+            ExecuteNonQuery(
+                connection,
+                """
+                CREATE TABLE IF NOT EXISTS access_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at_utc TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    decision TEXT NOT NULL,
+                    session_id TEXT NOT NULL,
+                    profile_id TEXT NULL,
+                    ip_address TEXT NULL,
+                    forwarded_for TEXT NULL,
+                    method TEXT NULL,
+                    path TEXT NULL,
+                    query_string TEXT NULL,
+                    host TEXT NULL,
+                    user_agent TEXT NULL,
+                    trace_id TEXT NULL,
+                    reason TEXT NULL
+                );
+                """);
+
+            ExecuteNonQuery(connection, "CREATE INDEX IF NOT EXISTS ix_access_events_created_at_utc ON access_events(created_at_utc);");
+            ExecuteNonQuery(connection, "CREATE INDEX IF NOT EXISTS ix_access_events_session_id ON access_events(session_id);");
+            ExecuteNonQuery(connection, "CREATE INDEX IF NOT EXISTS ix_access_events_profile_id ON access_events(profile_id);");
+            ExecuteNonQuery(connection, "CREATE INDEX IF NOT EXISTS ix_access_events_ip_address ON access_events(ip_address);");
+
+            _initialized = true;
         }
+
+        _logger?.Info($"[AntiCheat] SQLite access audit enabled: {databasePath}");
     }
 
     private static void ConfigureNativeSqliteResolver()
     {
-        // SPT 会把 mod 根目录里的 dll 当托管程序集扫描，所以 Windows 的 e_sqlite3.dll 不建议直接放在 user/mods 下。
-        // 优先从 SPT 根目录、发布目录的 runtimes/<rid>/native 以及当前程序集目录查找原生库。
+        // SPT 会把 mod 目录里的 dll 当托管程序集扫描，所以 e_sqlite3.dll 不能放在 user/mods 下。
+        // 这里把 SQLite 原生库固定加载为 SPT 程序根目录下的 e_sqlite3.dll。
         try
         {
             NativeLibrary.SetDllImportResolver(
@@ -110,38 +100,14 @@ internal static class AntiCheatAuditStore
                         return IntPtr.Zero;
                     }
 
-                    foreach (var nativePath in EnumerateNativeSqliteCandidates())
-                    {
-                        if (NativeLibrary.TryLoad(nativePath, out var handle)) return handle;
-                    }
-
-                    return IntPtr.Zero;
+                    var nativePath = Path.Combine(AppContext.BaseDirectory, "e_sqlite3.dll");
+                    return NativeLibrary.TryLoad(nativePath, out var handle) ? handle : IntPtr.Zero;
                 });
         }
         catch (InvalidOperationException)
         {
             // 同一个程序集只能设置一次 resolver；如果其它组件已经设置过，就继续使用现有 resolver。
         }
-    }
-
-    private static IEnumerable<string> EnumerateNativeSqliteCandidates()
-    {
-        var assemblyDirectory = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location) ?? AppContext.BaseDirectory;
-        var fileName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-            ? "e_sqlite3.dll"
-            : RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
-                ? "libe_sqlite3.dylib"
-                : "libe_sqlite3.so";
-        var rid = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-            ? "win-x64"
-            : RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
-                ? "osx-x64"
-                : "linux-x64";
-
-        yield return Path.Combine(AppContext.BaseDirectory, fileName);
-        yield return Path.Combine(assemblyDirectory, fileName);
-        yield return Path.Combine(assemblyDirectory, "runtimes", rid, "native", fileName);
-        yield return Path.Combine(AppContext.BaseDirectory, "runtimes", rid, "native", fileName);
     }
 
     public static void RecordHttpRequest(MongoId sessionId, HttpContext context, string decision, string? reason = null)

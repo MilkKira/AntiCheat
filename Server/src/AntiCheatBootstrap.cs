@@ -30,7 +30,6 @@ public sealed class AntiCheatBootstrap : IOnLoad
         // 静态 patch 类不能走构造函数注入，因此先把 SPT 工具对象保存到 ClientModGate。
         ClientModGate.Configure(_httpResponseUtil, _logger);
         AntiCheatAuditStore.Configure(_logger);
-        AntiCheatHandshakeService.Configure(AntiCheatSettings.Load(_logger), _logger);
 
         // 使用服务端 GUID 作为 Harmony 实例 id，便于后续排查补丁归属。
         var harmony = new Harmony(AntiCheatConstants.ServerGuid);
