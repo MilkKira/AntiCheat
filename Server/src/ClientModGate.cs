@@ -16,7 +16,22 @@ internal static class ClientModGate
 {
     // SPT/Fika 会在启动早期通过此接口上报客户端 Chainloader 插件列表。
     // 即使 session 已经被拒绝，也保留这个接口放行，方便玩家补回客户端 DLL/Fika 后重新上报并解除拒绝状态。
-    private const string ClientModsPath = "/singleplayer/clientmods";
+    // private const string ClientModsPath = "/singleplayer/clientmods";
+    
+    private static readonly string[] AllowedPathPrefixes = new[]
+    {
+        "/singleplayer/clientmods",
+        "/launcher"  // 以这个前缀开头的所有路径都放行
+    };
+    
+    public static bool IsAllowedPath(HttpContext context)
+    {
+        var path = context.Request.Path.Value;
+        if (string.IsNullOrWhiteSpace(path)) return false;
+
+        // 检查是否以白名单前缀开头
+        return AllowedPathPrefixes.Any(prefix => path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
+    }
 
     // 这两个地址是故意设置的客户端本机回环死地址。
     // 服务器把地址写进 NotifierChannel 后，真正尝试连接的是玩家客户端；因此 127.0.0.1 指玩家自己的电脑，不是云服务器。
@@ -104,7 +119,9 @@ internal static class ClientModGate
     public static bool IsClientModsRequest(HttpContext context)
     {
         // 只给 clientmods 留恢复通道，其它接口一旦 session 被拒绝就不再进入 SPT 路由。
-        return context.Request.Path.Equals(ClientModsPath, StringComparison.OrdinalIgnoreCase);
+        // return context.Request.Path.Equals(ClientModsPath, StringComparison.OrdinalIgnoreCase);
+        
+        return IsAllowedPath(context);
     }
 
     public static async Task RejectHttpRequestAsync(HttpContext context, MongoId sessionId, string reason)
