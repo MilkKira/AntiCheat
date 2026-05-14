@@ -36,12 +36,12 @@ public sealed class AntiCheatPlugin : BaseUnityPlugin
                 $"核心文件校验失败");
         }
         
-        // if (this.ScanForMaliciousModules())
-        // {
-        //     Logger.LogError("[MAC] A malicious module is detected and the game is about to quit!");
-        //     CrashAfterAcknowledgement(
-        //         $"游戏文件校验失败");
-        // }
+        if (this.ScanForMaliciousModules())
+        {
+            Logger.LogError("[MAC] A malicious module is detected and the game is about to quit!");
+            CrashAfterAcknowledgement(
+                $"游戏文件校验失败");
+        }
         
         // 保持 Fika 作为软依赖，避免 Fika 被移除时本插件也被 BepInEx 跳过加载。
         var missing = new[] { FikaGuid, PluginGuid }
