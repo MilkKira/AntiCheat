@@ -74,3 +74,7 @@ crashlytics-build.properties
 /[Aa]ssets/[Ss]treamingAssets/aa.meta
 /[Aa]ssets/[Ss]treamingAssets/aa/*
 /dist
+/Server/obj/Release
+/Client/obj/Release
+/Client/obj/Debug
+/Client/obj/Release
