@@ -1,0 +1,12 @@
+<Project>
+    <PropertyGroup>
+        <RepoRoot>$([System.IO.Path]::GetFullPath('$(MSBuildThisFileDirectory)..\'))</RepoRoot>
+        <SptRoot>$(RepoRoot)SPT\</SptRoot>
+        <BepInExRoot>$(RepoRoot)BepInEx\</BepInExRoot>
+        <ManagedRoot>$(RepoRoot)EscapeFromTarkov_Data\Managed\</ManagedRoot>
+        <LangVersion>latest</LangVersion>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    </PropertyGroup>
+</Project>
