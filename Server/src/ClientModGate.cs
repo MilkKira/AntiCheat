@@ -101,6 +101,18 @@ internal static class ClientModGate
         return RejectedSessions.TryGetValue(sessionId.ToString(), out reason!);
     }
 
+    public static void MarkHandshakeVerified(MongoId sessionId)
+    {
+        // 握手服务通过 HMAC 校验后会调用这里，让全局请求闸门知道当前 session 已经可信。
+        MarkVerified(sessionId);
+    }
+
+    public static void RejectSession(MongoId sessionId, string reason)
+    {
+        // 握手失败、超时或其它外部校验失败都走同一份拒绝状态，确保 HTTP / Notifier / WebSocket 行为一致。
+        MarkRejected(sessionId, reason);
+    }
+
     public static bool IsClientModsRequest(HttpContext context)
     {
         // 只给 clientmods 留恢复通道，其它接口一旦 session 被拒绝就不再进入 SPT 路由。

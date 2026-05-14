@@ -21,23 +21,41 @@ internal static class SptHttpListenerHandlePatch
         HttpContext context,
         ref Task __result)
     {
+        // 配套客户端会先访问反作弊握手接口领取挑战码并回传 HMAC 指纹。
+        // 这两个接口由本模组直接处理，不继续进入 SPT 原始路由。
+        if (AntiCheatHandshakeService.TryHandleEndpoint(sessionId, context, out var handshakeResult))
+        {
+            __result = handshakeResult;
+            return false;
+        }
+
         // if (!ClientModGate.IsRejected(sessionId, out var reason))
         // {
         //     AntiCheatAuditStore.RecordHttpRequest(sessionId, context, "allowed");
         //     return true;
         // }
-        if (!ClientModGate.IsRejected(sessionId, out var reason)) return true;
-
-        // 保留 clientmods 放行：玩家补回 Fika/AntiCheat 客户端后，可以重新上报插件列表并解除拒绝状态。
-        if (ClientModGate.IsClientModsRequest(context))
+        if (ClientModGate.IsRejected(sessionId, out var reason))
         {
-            AntiCheatAuditStore.RecordHttpRequest(sessionId, context, "allowed_clientmods_recheck", reason);
-            return true;
+            // 保留 clientmods 放行：玩家补回 Fika/AntiCheat 客户端后，可以重新上报插件列表并解除拒绝状态。
+            if (ClientModGate.IsClientModsRequest(context))
+            {
+                AntiCheatAuditStore.RecordHttpRequest(sessionId, context, "allowed_clientmods_recheck", reason);
+                return true;
+            }
+
+            // 返回 false 表示跳过原始 Handle；__result 指向我们自己的 403 写回任务。
+            __result = ClientModGate.RejectHttpRequestAsync(context, sessionId, reason);
+            return false;
         }
 
-        // 返回 false 表示跳过原始 Handle；__result 指向我们自己的 403 写回任务。
-        __result = ClientModGate.RejectHttpRequestAsync(context, sessionId, reason);
-        return false;
+        // 未完成握手的客户端只给 10 秒宽限期。超时后会进入拒绝名单，此后的所有普通请求都会被 403。
+        if (!AntiCheatHandshakeService.IsRequestAllowed(sessionId, context, out var handshakeRejectionReason))
+        {
+            __result = ClientModGate.RejectHttpRequestAsync(context, sessionId, handshakeRejectionReason);
+            return false;
+        }
+
+        return true;
     }
 }
 
